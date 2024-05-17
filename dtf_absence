@@ -1,0 +1,59 @@
+import argparse
+import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.io.gcp.bigquery import ReadFromBigQuery, WriteToBigQuery
+import logging
+from datetime import datetime
+
+
+table_schema = 'First_Day_of_Leave:DATETIME, Leave_Type_excluding_Family:STRING, Last_Day_of_Leave_Estimated:STRING, Last_Day_of_Leave_Actual:STRING, Leave_Reason:STRING, Worker_WID:STRING, Leave_of_Absence_Request_WID:STRING, Transaction_Status:STRING'
+
+class DataTransformation(beam.DoFn):
+
+    def change(element):
+        # Parse the CSV line
+        #columns = element.split(',')
+       # y=element[First_Day_of_Leave]
+        # Unpack the fields (assuming the order is EmployeeID, Name, DateOfJoining)
+        #employee_id, name, date_of_joining = columns[0], columns[1], columns[2]
+        from datetime import datetime
+        date_obj = datetime.strptime(element['First_Day_of_Leave'],'%d/%m/%Y')
+        element['First_Day_of_Leave'] = date_obj.strftime('%Y-%m-%d')
+        #CAST(element as DATE)
+        element['First_Day_of_Leave'] = datetime.strptime(element['First_Day_of_Leave'],'%Y-%m-%d')
+        #STR_TO_DATE(element,'%Y-%m-%d')
+        print((element['First_Day_of_Leave']))
+        return element
+    
+def run_pipeline(argv=None):
+    # Create an argument parser
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input', dest='input_table', required=True, help='BigQuery table to read from in the format dataset.table')
+    parser.add_argument('--output', dest='output_table', required=True, help='BigQuery table to write to in the format dataset.table')
+    
+    # Parse the command-line arguments
+    known_args, pipeline_args = parser.parse_known_args(argv)
+    
+    # Create PipelineOptions using the parsed arguments
+    pipeline_options = PipelineOptions(pipeline_args)
+    source_table=known_args.input_table
+    # Create the pipeline
+    with beam.Pipeline(options=pipeline_options) as p:
+        # Read data from the BigQuery table
+        rows = p | "ReadFromBigQuery" >> ReadFromBigQuery(table=known_args.input_table)
+
+        # Transform the data by combining firstname and lastname into name
+        transformed_data = rows | "TransformData" >> beam.Map(DataTransformation.change)
+        
+        # Write the transformed data to another BigQuery table
+        #transformed_data | 'WriteToBigQuery' >> WriteToBigQuery(
+        rows | 'WriteToBigQuery' >> WriteToBigQuery(
+            table=known_args.output_table,
+            schema=table_schema,
+            write_disposition=beam.io.BigQueryDisposition.WRITE_TRUNCATE,
+            create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
+        )
+
+if __name__ == '__main__':
+    logging.getLogger().setLevel(logging.INFO)
+    run_pipeline()
