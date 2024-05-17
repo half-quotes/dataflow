@@ -1,0 +1,59 @@
+import argparse
+import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.io.gcp.bigquery import ReadFromBigQuery, WriteToBigQuery
+import logging
+from datetime import datetime
+
+
+table_schema = 'Report_Effective_Date:DATETIME, Employee_ID:STRING, Worker_WID:STRING, Date_of_Birth:STRING, Gender:STRING, Home_City:STRING, Home_Postal_Code:STRING, Location_WID:STRING, Location_Code:STRING, GID:STRING, Payroll_ID:STRING, Contract_Start_Date:STRING, Contract_End_Date:STRING, Contract_Type:STRING, Employee_Status:STRING, Weekly_Schedule_Hours:STRING, Time_Type:STRING, Job_Profile_WID:STRING, Job_Profile_ID:STRING, Position_ID:STRING, Position_Title:STRING, Manager_WID:STRING, Pay_Grade:STRING, Pay_Grade_Profile:STRING, Pay_Range_Minimum:STRING, Pay_Range_Maximum:STRING, Salary_Currency:STRING, Annual_Salary:STRING, FTE:STRING, Pay_Group:STRING, Worker_Type:STRING, Worker_Sub_Type:STRING, Supervisory_Organization_WID:STRING, Supervisory_Org_Ref_ID:STRING, Cost_Center_WID:STRING, Cost_Center_Code:STRING, Hire_Date:STRING, Original_Hire_Date:STRING, Continuous_Service_Date:STRING, Is_Manager:STRING, CF_LRV_Agile_Working_on_Worker:STRING, Assignment_Status:STRING, Contract_Reason:STRING, Employing_Company:STRING, Involuntary_Termination:STRING, termination_date:STRING, termination_primary:STRING, Notional_Salary:STRING, Ready_For:STRING, Ready_Now_Assessment:STRING, Ready_Now_Completed_Rating:STRING, Ready_Now_Assessment_Date:STRING, Retention_Risk_Of_Loss:STRING, Retention_Risk_Impact_Of_Loss:STRING, Retention_Risk:STRING, Length_of_Time_Ready_Now:STRING, Regretted_Leaver:STRING, GPS_Plan_Code:STRING, GPS_Plan_Description:STRING, First_Name:STRING, Last_Name:STRING, Pension_Scheme_Indicator:STRING, DB_pension_flag_:STRING, Harmonised_Grade:STRING, Heritage_Cost_Centre_ID:STRING, LBCM_Flag:STRING, Line_Manager_First_Name:STRING, Line_Manager_Last_Name:STRING, Platform:STRING, Custom_Company:STRING'
+
+class DataTransformation(beam.DoFn):
+
+    def change(element):
+        # Parse the CSV line
+        #columns = element.split(',')
+       # y=element[First_Day_of_Leave]
+        # Unpack the fields (assuming the order is EmployeeID, Name, DateOfJoining)
+        #employee_id, name, date_of_joining = columns[0], columns[1], columns[2]
+        from datetime import datetime
+        date_obj = datetime.strptime(element['Report_Effective_Date'],'%Y-%m-%d')
+        element['Report_Effective_Date'] = date_obj.strftime('%Y-%m-%d')
+        #CAST(element as DATE)
+        element['Report_Effective_Date'] = datetime.strptime(element['Report_Effective_Date'],'%Y-%m-%d')
+        #STR_TO_DATE(element,'%Y-%m-%d')
+        print((element['Report_Effective_Date']))
+        return element
+    
+def run_pipeline(argv=None):
+    # Create an argument parser
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input', dest='input_table', required=True, help='BigQuery table to read from in the format dataset.table')
+    parser.add_argument('--output', dest='output_table', required=True, help='BigQuery table to write to in the format dataset.table')
+    
+    # Parse the command-line arguments
+    known_args, pipeline_args = parser.parse_known_args(argv)
+    
+    # Create PipelineOptions using the parsed arguments
+    pipeline_options = PipelineOptions(pipeline_args)
+    source_table=known_args.input_table
+    # Create the pipeline
+    with beam.Pipeline(options=pipeline_options) as p:
+        # Read data from the BigQuery table
+        rows = p | "ReadFromBigQuery" >> ReadFromBigQuery(table=known_args.input_table)
+
+        # Transform the data by combining firstname and lastname into name
+        transformed_data = rows | "TransformData" >> beam.Map(DataTransformation.change)
+        
+        # Write the transformed data to another BigQuery table
+        #transformed_data | 'WriteToBigQuery' >> WriteToBigQuery(
+        rows | 'WriteToBigQuery' >> WriteToBigQuery(
+            table=known_args.output_table,
+            schema=table_schema,
+            write_disposition=beam.io.BigQueryDisposition.WRITE_TRUNCATE,
+            create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
+        )
+
+if __name__ == '__main__':
+    logging.getLogger().setLevel(logging.INFO)
+    run_pipeline()
